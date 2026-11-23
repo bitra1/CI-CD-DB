@@ -1,11 +1,22 @@
+
 import os
+import logging
 import mysql.connector
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+# Load environment variables
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+)
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="My Second Project")
 
@@ -21,7 +32,7 @@ def get_db_connection():
         "database": os.getenv("DB_NAME"),
     }
 
-    # Enable certificate verification when CA is configured.
+    # Enable SSL certificate verification
     ca_path = os.getenv("DB_SSL_CA")
 
     if ca_path:
@@ -43,7 +54,12 @@ class User(BaseModel):
 # Home API
 @app.get("/")
 def home():
-    return {"message": "My Second Project API is running"}
+
+    logger.info("Home API called")
+
+    return {
+        "message": "My Second Project API is running"
+    }
 
 
 # POST API - Insert user
@@ -54,25 +70,44 @@ def create_user(user: User):
     cursor = None
 
     try:
+
+        logger.info("POST /users called for email: %s", user.email)
+
+        # Connect to database
         conn = get_db_connection()
+
+        logger.info("Database connection established")
+
         cursor = conn.cursor()
 
+        # Insert query
         query = """
             INSERT INTO users (name, email)
             VALUES (%s, %s)
         """
 
         cursor.execute(query, (user.name, user.email))
+
         conn.commit()
+
+        user_id = cursor.lastrowid
+
+        logger.info(
+            "User inserted successfully. User ID: %s",
+            user_id
+        )
 
         return {
             "message": "User created successfully",
-            "user_id": cursor.lastrowid,
+            "user_id": user_id,
             "name": user.name,
             "email": user.email
         }
 
     except mysql.connector.Error:
+
+        logger.exception("POST /users database operation failed")
+
         if conn and conn.is_connected():
             conn.rollback()
 
@@ -82,11 +117,14 @@ def create_user(user: User):
         )
 
     finally:
+
         if cursor:
             cursor.close()
 
         if conn and conn.is_connected():
             conn.close()
+
+            logger.info("Database connection closed")
 
 
 # GET API - Retrieve all users
@@ -97,16 +135,31 @@ def get_users():
     cursor = None
 
     try:
+
+        logger.info("GET /users called")
+
+        # Connect to database
         conn = get_db_connection()
+
+        logger.info("Database connection established")
+
         cursor = conn.cursor(dictionary=True)
 
-        cursor.execute("""
+        # Retrieve query
+        query = """
             SELECT id, name, email
             FROM users
             ORDER BY id DESC
-        """)
+        """
+
+        cursor.execute(query)
 
         users = cursor.fetchall()
+
+        logger.info(
+            "Retrieved %s user records successfully",
+            len(users)
+        )
 
         return {
             "total": len(users),
@@ -114,14 +167,20 @@ def get_users():
         }
 
     except mysql.connector.Error:
+
+        logger.exception("GET /users database operation failed")
+
         raise HTTPException(
             status_code=500,
             detail="Unable to retrieve users"
         )
 
     finally:
+
         if cursor:
             cursor.close()
 
         if conn and conn.is_connected():
             conn.close()
+
+            logger.info("Database connection closed")
